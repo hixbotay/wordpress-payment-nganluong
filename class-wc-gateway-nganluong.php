@@ -1,448 +1,346 @@
 <?php
 /**
- * Plugin Name: Woocommerce Payment Gateway MOMO
- * Plugin URI: https://wordpress.org/plugins/woocommerce-payment-gateway-momo
- * Description: MOMO E-wallet from momo.vn for Woocommerce
- * Version: 1.0.0
- * Author: Duong
- * Author URI: http://woocommerce.com/
- * Developer: Duong
- * Developer URI: 
- * Text Domain: woocommerce-payment-gateway-momo
- * Domain Path: /languages
- *
- * Copyright: © 2009-2015 WooCommerce.
- * License: GNU General Public License v3.0
- * License URI: http://www.gnu.org/licenses/gpl-3.0.html
+ * Plugin Name: Ngan Luong
+ * Plugin URI: https://www.nganluong.vn/nganluong/homeDeveloper/DeveloperWordPress.html
+ * Description: Full integration for Ngan Luong payment gateway for WooCommerce
+ * Version: 1.2.2
+ * Author: nguyencamhue
+ * Author URI: https://www.nganluong.vn
+ * License: 
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-add_action( 'plugins_loaded', 'init_wc_payment_momo_gateway' );
+add_action('plugins_loaded', 'woocommerce_NganLuongVN_init', 0);
 
-function init_wc_payment_momo_gateway(){
-	if(!class_exists('WC_Payment_Gateway')) return;
-	
-	class WC_Gateway_Momo extends WC_Payment_Gateway {
-		
-	
-		public static $log_enabled = false;
-		public static $log = false;
-	
-		public function __construct() {
-			$this->id                 = 'wc_payment_momo';
-			$this->has_fields         = true;//if need some option in checkout page
-			$this->order_button_text  = __( 'Pay', 'woocommerce-payment-gateway-momo' );
-			$this->method_title       = __( 'Pay with Momo', 'woocommerce-payment-gateway-momo' );
-			$this->method_description = 'MOMO';
-			$this->supports           = array(
-				'products'
-			);
-	
-			// Load the settings.
-			$this->init_form_fields();
-			$this->init_settings();
-	
-			// Define user set variables.
-			$this->title          = $this->get_option( 'title' );
-			$this->description    = $this->get_option( 'description' );
-			
-			$this->testmode       = 'yes' === $this->get_option( 'testmode', 'no' );			
-			$this->debug          = 'yes' === $this->get_option( 'debug', 'no' );			
-			$this->return_url = WC()->api_request_url( 'wc_payment_momo' );
-			$this->thankyou_url = $this->get_option( 'thankyou_page' );
+function woocommerce_NganLuongVN_init(){
+  if(!class_exists('WC_Payment_Gateway')) return;
 
-			$this->requestType = 'captureMoMoWallet';
-			$this->endpoint_checkout = 'https://momo.vn/gw_payment/transactionProcessor';
-			$this->partnerCode = $this->get_option( 'partnerCode' );
-			$this->accessKey = $this->get_option( 'accessKey' );
-			$this->serectkey = $this->get_option( 'serectkey' );
-			
-			if($this->testmode){
-				$this->endpoint_checkout = 'https://test-payment.momo.vn/gw_payment/transactionProcessor';
-				$this->partnerCode = 'MOMO0HGO20180417';
-				$this->accessKey = 'E8HZuQRy2RsjVtZp';
-				$this->serectkey = 'fj00YKnJhmYqahaFWUgkg75saNTzMrbO';
-			}
-	
-			self::$log_enabled    = $this->debug;
-			
-				
-			
-			add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
-			add_action( 'woocommerce_api_wc_payment_momo', array( $this, 'capture_payment' ) );
-			add_action('woocommerce_receipt_public_bank', array($this, 'checkout_form'));
-			$plugin = plugin_basename( __FILE__ );
-			add_filter( "plugin_action_links_$plugin", array( $this, 'add_admin_section' ) );
-	
-		}
+  class WC_NganLuongVN extends WC_Payment_Gateway{
 
-		function execPostRequest($url, $data)
-		{
-			if(is_array($data) || is_object($data)){
-				$data = json_encode($data);
-			}
-			$ch = curl_init($url);
-			curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-			curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-			curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-				'Content-Type: application/json',
-				'Content-Length: ' . strlen($data))
-			);
-			curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-			curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    // URL checkout của nganluong.vn - Checkout URL for Ngan Luong
+    private $nganluong_url;
 
-			//execute post
-			$result = curl_exec($ch);
+    // Mã merchant site code
+    private $merchant_site_code;
 
-			//close connection
-			curl_close($ch);
+    // Mật khẩu bảo mật - Secure password
+    private $secure_pass;
 
-			return $result;
-		}
-		
-		
-		
-		public static function log( $error, $level = 'info') {
-			if ( self::$log_enabled ) {
-				date_default_timezone_set('Asia/Ho_Chi_Minh');
-				$date = date('d/m/Y H:i:s');
-				$error = $date.": ".$error."\n";
-				
-				$log_file = __DIR__."/log.txt";
-				if(!file_exists($log_file) || filesize($log_file) > 1048576){
-					$fh = fopen($log_file, 'w');
-				}
-				else{
-					//echo "Append log to log file ".$log_file;
-					$fh = fopen($log_file, 'a');
-				}
-				
-				fwrite($fh, $error);
-				fclose($fh);
-			}
-		}
-	
-		public function get_icon() {
-			$icon_html = '';
-			return apply_filters( 'woocommerce_gateway_icon', $icon_html, $this->id );
-		}
-	
-		
-		public function is_valid_for_use() {			
-			return in_array( get_woocommerce_currency(), apply_filters( 'woocommerce_momo_supported_currencies', array( 'VND' ) ) );
-		}
-		
-		public function admin_options() {
-			if ( $this->is_valid_for_use() ) {
-				parent::admin_options();
-			} else {
-				?>
-				<div class="inline error"><p><strong><?php _e( 'Gateway Disabled', 'woocommerce' ); ?></strong>: <?php _e( 'Momo does not support your store currency.', 'woocommerce' ); ?></p></div>
-				<?php
-			}
-		}
-		
-		//form in checkout page
-		public function payment_fields(){
-			return '';
-		}
-		
-		//check form is valid
-		public function validate_fields(){
-			return true;
-		}
-	
-		/**
-		 * Initialise Gateway Settings Form Fields.
-		 */
-		public function init_form_fields() {
-			$this->form_fields = array(
-				'enabled' => array(
-					'title' => __( 'Enable/Disable', 'woocommerce-payment-gateway-momo' ),
-					'type' => 'checkbox',
-					'label' => __( 'Enable Momo Payment', 'woocommerce-payment-gateway-momo' ),
-					'default' => 'yes'
-				),
-				'title' => array(
-					'title' => __( 'Title', 'woocommerce-payment-gateway-momo' ),
-					'type' => 'text',
-					'description' => __( 'This controls the title which the user sees during checkout.', 'woocommerce-payment-gateway-momo' ),
-					'default' => __( 'Public Bank', 'woocommerce-payment-gateway-momo' ),
-					'desc_tip'      => true,
-				),
-				'description' => array(
-					'title' => __( 'Customer Message', 'woocommerce-payment-gateway-momo' ),
-					'type' => 'textarea',
-					'default' => ''
-				),
-				'thankyou_page' => array(
-						'title' => __('Thank you page','woocommerce'),
-						'type' => 'select',
-						'options' => $this -> get_pages('Choose...'),
-						'description' =>__("Chooseing page/url to redirect after Payment Success.",'woocommerce-payment-gateway-momo')
-				),
-				'partnerCode' => array(
-					'title' => __( 'Partner Code', 'woocommerce-payment-gateway-momo' ),
-					'type' => 'text',
-					'description' => __( 'Partner Code', 'woocommerce-payment-gateway-momo' ),
-					'default' => ''
-				),
-				'accessKey' => array(
-						'title' => __( 'Access Key', 'woocommerce-payment-gateway-momo' ),
-						'type' => 'text',
-						'description' => __( 'Access Key', 'woocommerce-payment-gateway-momo' ),
-						'default' => ''
-				),
-				'serectkey' => array(
-					'title' => __( 'Secret Key', 'woocommerce-payment-gateway-momo' ),
-					'type' => 'text',
-					'description' => __( 'Secret Key', 'woocommerce-payment-gateway-momo' ),
-					'default' => ''
-				),
-				'testmode' => array(
-						'title' => __( 'Testmode', 'woocommerce-payment-gateway-momo' ),
-						'type' => 'checkbox',
-						'description' => __( 'Enable test mode', 'woocommerce-payment-gateway-momo' ),
-						'default' => 'no',
-				),
-				'debug' => array(
-						'title' => __( 'Debug', 'woocommerce-payment-gateway-momo' ),
-						'type' => 'checkbox',
-						'description' => sprintf( __( 'Log Momo events, inside %s', 'woocommerce-payment-gateway-momo' ), '<code>'.__DIR__.'/log.txt</code>' ),
-						'default' => 'no',
-				),
-				'Donate' => array(
-						'title' => __( 'Donate', 'woocommerce-payment-gateway-momo' ),
-						'type' => 'note',
-						'description' => "If this plugin help you please donate me ",
-						'default' => 'no',
-				),
-			);
-		}
-	
-	
-		/**
-		 * Process the payment and return the result.
-		 * @param  int $order_id
-		 * @return array
-		 */
-		public function process_payment( $order_id ) {
-			
-			 global $woocommerce;
-			$order = new WC_Order( $order_id );			
-			
-			$params = array(
-					'currency_code' => get_woocommerce_currency(),
-					'return' => $this->return_url,
-					'merID' => $merchant_id,
-					'invoiceNo' => sprintf('%020d',$order->get_id()),
-					'amount' => $this->number_format($order->get_total(),$order),
-					'postURL' => str_replace('http://','https://',$this->return_url),
-					'securityMethod' => 'SHA1',
-					'securityKeyReq' => $securityKeyReq
-			);
-			$data =  array('partnerCode' => $this->partnerCode,
-                  'accessKey' => $this->accessKey,
-                  'requestId' => $this->requestId,
-                  'amount' => $this->number_format($order->get_total(),$order),
-                  'orderId' => $order->get_id(),
-                  'orderInfo' => sprintf('%020d',$order->get_id()),
-                  'returnUrl' => $this->return_url,
-                  'notifyUrl' => $this->notify_url,
-                  'extraData' => $extraData,
-			);
-			$data['signature'] = hash_hmac("sha256", http_build_query($data), $this->serectkey);
-			$data['requestType'] = $this->requestType;
-			$result = $this->execPostRequest($this->endpoint, $data);
-			
-			return array(
-	          'result'  =>$result['status']  == '' ? 'success' : 'failed',
-	          'redirect'  => $result['']
-	        );
-		}
-		
-		function checkout_form($order_id){
-			$merchant = $_GET['wc_pb_merchant'];
-			if($merchant =='visa'){
-				$merchant_id = $this->merid_visa;
-			}else{
-				$merchant_id = $this->merid_master;
-			}
-			
-			global $woocommerce;
-			$order = new WC_Order( $order_id );
-			
-			$has_key = sprintf('%020d',$order->get_id()).$this->number_format($order->get_total(),$order).$this->secretCode.$merchant_id;
-			//$has_key = 'PUBLICBANKBERHAD0001000000888800PBBSECRET3300000888';
-			$securityKeyReq = base64_encode(sha1($has_key,true));
-			
-			
-			$params = array(
-					'currency_code' => get_woocommerce_currency(),
-					'return' => $this->return_url,
-					'merID' => $merchant_id,
-					'invoiceNo' => sprintf('%020d',$order->get_id()),
-					'amount' => $this->number_format($order->get_total(),$order),
-					'postURL' => str_replace('http://','https://',$this->return_url),
-					'securityMethod' => 'SHA1',
-					'securityKeyReq' => $securityKeyReq
-			);
+    // Debug parameters
+    private $debug_params;
+    private $debug_md5;
 
-// 			$this->debug($has_key);
-// 			$this->debug($params);die;
-			
-			
-			// Mark as on-hold (we're awaiting the cheque)
-// 			$order->update_status('on-hold', __( 'Awaiting Public Bank payment', 'woocommerce' ));
-			if(0){
-				echo $has_key.'<br>'.$securityKeyReq;
-				echo '<form action="'.$this->return_url.'" method="POST" name="jb_payment_form" id="jb_payment_form">';
-				echo "return url: {$this->return_url}<br>";
-				echo '<input name="result" value="00T54321PUBLICBANKBERHAD00018888121800000088880005" type="text" />';
-				echo '<input name="securityKeyRes" value="ih2K8LiVguw50GEV2gjXfKOGAlk=" type="text" />';
-				echo '<center><button type="submit">'.__('continue', 'woocommerce').'</button></center>';
-				echo '</form>';
-			}else{
-				$woocommerce->cart->empty_cart();
-				echo '<form action="'.$this->endpoint_checkout.'" method="POST" name="jb_payment_form" id="jb_payment_form">';
-				foreach($params as $key=>$val){
-					echo '<input name="'.$key.'" value="'.$val.'" type="hidden" />';
-				}
-				echo '<center><button type="submit">'.__('continue', 'woocommerce').'</button></center>';
-				echo '</form>';
-				
-				echo '<script>document.jb_payment_form.submit();</script>';
-			}
-			
-			return;
-		}
+    function __construct(){
+      
+      //$this->icon = 'https://www.nganluong.vn/css/newhome/img/logos/logo-nganluong.png'; // Icon URL
+      $this->id = 'nganluong';
+      $this->method_title = 'Thanh toán qua Internet banking';
+      $this->has_fields = false;
+
+      $this->init_form_fields();
+      $this->init_settings();
+
+      $this->title = $this->get_option('title');
+      $this->description = $this->get_option('description');
+
+      $this->nganluong_url = 'https://www.nganluong.vn/checkout.php';
+      $this->merchant_site_code = $this->get_option('merchant_site_code');
+      $this->merchant_id = $this->get_option('merchant_id');
+      $this->secure_pass = $this->get_option('secure_pass');
+      $this->redirect_page_id = $this->get_option('redirect_page_id');
+	  $this->cur_code = $this->get_option('nlcurrency');
+      $this->debug = $this->get_option('debug');
+      $this->order_button_text = __( 'Thanh toán Ngân Lượng', 'woocommerce' );
+	  $this->return_url = WC()->api_request_url( 'wc_nganluong' );
+      $this->msg['message'] = "";
+      $this->msg['class'] = "";
+
+      if ( version_compare( WOOCOMMERCE_VERSION, '2.0.8', '>=' ) ) {
+                add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( &$this, 'process_admin_options' ) );
+             } else {
+                add_action( 'woocommerce_update_options_payment_gateways', array( &$this, 'process_admin_options' ) );
+            } 
+   
+    add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
+	add_action( 'woocommerce_api_wc_nganluong', array( $this, 'capture_payment' ) );
+   }
+    function init_form_fields(){
+        // Admin fields
+       $this->form_fields = array(
+                'enabled' => array(
+                    'title' => __('Activate', 'woocommerce'),
+                    'type' => 'checkbox',
+                    'label' => __('Activate the payment gateway for Ngan Luong', 'woocommerce'),
+                    'default' => 'no'),
+                'title' => array(
+                    'title' => __('Name:', 'woocommerce'),
+                    'type'=> 'text',
+                    'description' => __('Name of payment method (as the customer sees it)', 'woocommerce'),
+                    'default' => __('Thanh toán qua Internet banking', 'woocommerce')),
+                'description' => array(
+                    'title' => __('', 'woocommerce'),
+                    'type' => 'textarea',
+                    'description' => __('Payment gateway description', 'woocommerce'),
+                    'default' => __('Click place order and you will be directed to the Ngan Luong website in order to make payment', 'woocommerce')),
+                'merchant_id' => array(
+                    'title' => __('NganLuong.vn email address', 'woocommerce'),
+                    'type' => 'text',
+                    'description' => __('Enter the Ngan Luong account email address')),
+                'redirect_page_id' => array(
+                    'title' => __('Return URL'),
+                    'type' => 'select',
+                    'options' => $this->get_pages('Hãy chọn...'),
+                    'description' => __('Please choose the URL to return to after checking out at NganLuong.vn. Mặc định chọn trang chi tiết giao dịch', 'woocommerce')
+                ),
+                'nlcurrency' => array(
+                    'title' => __('Currency', 'woocommerce'),
+                   'type' => 'text',
+                   'default' => 'vnd',
+                    'description' => __('"vnd" or "usd"', 'woocommerce')
+                ),
+               'merchant_site_code' => array(
+                  'title' => __( 'Merchant Site Code', 'woocommerce'),
+                  'type' => 'text'
+                ),
+                'secure_pass' => array(
+                  'title' => __( 'Secure Password', 'woocommerce'),
+                  'type' => 'password'
+                ),
+                'debug' => array(
+                    'title' => __('Debug', 'woocommerce'),
+                    'type' => 'checkbox',
+                    'label' => __('Debug Ngan Luong plugin', 'woocommerce'),
+                    'default' => 'no')
+            );
+    }
+
+    public function admin_options(){
+      echo '<h3>'.__('NganLuongVN Payment Gateway', 'woocommerce').'</h3>';
+      echo '<table class="form-table">';
+      // Generate the HTML For the settings form.
+      $this->generate_settings_html();
+      echo '</table>';
+    }
+
+    /**
+     *  There are no payment fields for NganLuongVN, but we want to show the description if set.
+     **/
+    function payment_fields(){
+        if($this->description) echo wpautop(wptexturize(__($this->description, 'woocommerce')));
+    }
+
+    /**
+     * Process the payment and return the result
+     **/
+    function process_payment( $order_id ) {
+		global $woocommerce;
+		$order = new WC_Order( $order_id );
+
+     // $order_items = $order->get_items();
+	  $order_items = $order->get_items();
+
+      $return_url = $this->return_url;
+	  //$return_url = 'nganluong.vn';
+      $receiver = $this->merchant_id;
+      $transaction_info = ''; 
+      
+      $order_description = $order_id;
+
+      $order_quantity = $order->get_item_count();
+      //$discount = $order->get_total_discount();
+	  $currency = $this->cur_code;
+	  $discount = 0;
+      $tax = $order->get_cart_tax();
+	  //$tax = 0;
+      $fee_shipping = $order->get_total_shipping();
+	  
+
+     /*  $product_names = '';
+      foreach ($order_items as $order_item) {
+        $product_names[] = $order_item['name'];
+      }
+      $order_description = implode(', ', $product_names); */ // this goes into transaction info, which shows up on Ngan Luong as the description of goods
+
+      $price = $order->get_total() - ($tax + $fee_shipping);
+	  $buyer_info = $order->billing_first_name." ".$order->billing_last_name.'*|*'. $order->billing_email.'*|*'.$order->billing_phone.'*|*'.$order->billing_address_1.", ".$order->billing_city;
+      $checkouturl = $this->buildCheckoutUrlExpand($return_url, $receiver, $transaction_info, $order_id, $price, $currency, $quantity = 1, $tax, $discount, $fee_cal = 0, $fee_shipping, $order_description, $buyer_info);
 		
-		//process in return
-		public function capture_payment() {
-			$result = $_POST['result'];
-			$status = substr($result,0,2);
-			$tx_id = substr($result,2,6);
-			$order_id = substr($result,8,20);
-			$card_number = substr($result,28,4);
-			$exp = substr($result,32,4);
-			$amount = substr($result,36,12);
-			
-			$order = wc_get_order( (int)$order_id);
-			//$this->debug($_POST);
-			//$this->debug($status);
-			$this->log( 'Capture Result: ' . wc_print_r( $result, true ) );
-			$this->log( 'Response: ' . json_encode($_REQUEST) );
-			
-			if($status == '00' && $order){
-				$hash_key = $tx_id.$status.$order_id.$this->secretCode.$card_number.$exp.$amount;
-				$securityKeyRes = base64_encode(sha1($hash_key,true));
-				//$this->debug($hash_key);				
-				//$this->debug($securityKeyRes);
-				
-				if($_POST['securityKeyRes'] == $securityKeyRes){
-					$order->add_order_note( sprintf( __( 'Payment of %1$s was captured - Credit card: %2$s, Transaction ID: %3$s', 'woocommerce' ), $this->id, $card_number, $tx_id ) );
-					$order->payment_complete( $tx_id );
-					$order->reduce_order_stock();
-					update_post_meta( $order->get_id(), '_transaction_id', $tx_id );	
-					$thankyou_page = $this->thankyou_page ? get_permalink($this->thankyou_page) : esc_url_raw( add_query_arg( 'utm_nooverride', '1', $this->get_return_url( $order ) )); 
-					wp_redirect($thankyou_page);
-					exit;
-				}else{
-					$order->add_order_note( "Authentication failed. code: {$status} securityKeyRes {$_POST['securityKeyRes']} result{$result}" );
-				}
-			}else{
-				$order->add_order_note( "Payment failed. {$result}" );
-			}
-			wc_add_notice(__('Payment failed','woocommerce'));
-			wp_redirect(wc_get_page_permalink( 'cart' ));
+      return array(
+            'result'    => 'success',
+            'redirect'  => $checkouturl
+          );      
+    }
+
+    function capture_payment() {
+		// Return to site after checking out with Ngan Luong
+		// Note this has not been fully-tested
+		global $woocommerce;
+		$order_id = $_REQUEST['order_code'];
+		$order = new WC_Order( $order_id );
+		
+		// This probably could be written better
+		$tx_id = $_GET['payment_id'];
+		$transaction_info = ''; // urlencode("Order#".$order_id." | ".$_SERVER['SERVER_NAME']);
+		$order_code = $order_id;
+		$price =$_GET['price'];
+		$payment_id = $_GET['payment_id'];
+		$payment_type = $_GET['payment_type'];
+		$error_text = $_GET['error_text'];
+		$secure_code = $_GET['secure_code'];
+		$this->write_log('nganluong.txt',json_encode($_REQUEST));
+		// This is from the class provided by Ngan Luong
+		// All these parameters should match the ones provided above before checkout
+		if ( $this->verifyPaymentUrl($transaction_info, $order_code, $price, $payment_id, $payment_type, $error_text, $secure_code) ) {      
+			  //$new_order_status = 'completed';
+			  //$order->update_status($new_order_status );
+			  // Remove cart
+			  $woocommerce->cart->empty_cart();
+			  // Empty awaiting payment session
+			  unset($_SESSION['order_awaiting_payment']);
+		 
+		  
+			$order->add_order_note("Thanh toán thành công - transaction id {$tx_id}");
+			$order->payment_complete( $tx_id );
+			$order->reduce_order_stock();
+			update_post_meta( $order_id, '_transaction_id', $tx_id );	
+			$thankyou_page = $this->redirect_page_id ? get_permalink($this->redirect_page_id) : $this->get_return_url( $order ); 
+			wp_redirect($thankyou_page);			
 			exit;
-			
-		}
-		
-		
+		}else{
+			$order->add_order_note( "Thanh toán thất bại" );
+		}  
+		wc_add_notice(__('Payment failed','woocommerce'));
+		wp_redirect(wc_get_page_permalink( 'cart' ));
+		exit;
+    }
 	
-		/**
-		 * Can the order be refunded via Public Bank?
-		 * @param  WC_Order $order
-		 * @return bool
-		 */
-		public function can_refund_order( $order ) {
-			return false;
-		}
-	
-		/**
-		 * Process a refund if supported.
-		 * @param  int    $order_id
-		 * @param  float  $amount
-		 * @param  string $reason
-		 * @return bool True or false based on success, or a WP_Error object
-		 */
-		public function process_refund( $order_id, $amount = null, $reason = '' ) {
-			$order = wc_get_order( $order_id );
-	
-			if ( ! $this->can_refund_order( $order ) ) {
-				return new WP_Error( 'error', 'Momo chưa chỗ trợ refund, vui lòng trả tiền bằng tay' );
-			}
-			// $order->add_order_note( sprintf( __( 'Refunded %s - Refund ID: %s', 'woocommerce' ), $result['GROSSREFUNDAMT'], $result['REFUNDTRANSACTIONID'] ) );
-			
+	function write_log($log_file, $error){
+		date_default_timezone_set('Asia/Ho_Chi_Minh');
+		$date = date('d/m/Y H:i:s');
+		$error = $date.": ".$error."\n";
+		if (!is_dir(ABSPATH."logs")) {
+			mkdir(ABSPATH."logs", 0755, true);
 		}
 		
-		protected function number_format( $price, $order ) {
-			$decimals = 2;
-			return sprintf('%012d',(number_format( $price, $decimals, '.', '' )*100));
+		$log_file = ABSPATH."logs/".$log_file;
+		if(filesize($log_file) > 1048576 || !file_exists($log_file)){
+			$fh = fopen($log_file, 'w');
+		}
+		else{
+			//echo "Append log to log file ".$log_file;
+			$fh = fopen($log_file, 'a');
 		}
 		
-		function get_pages($title = false, $indent = true) {
-			$wp_pages = get_pages('sort_column=menu_order');
-			$page_list = array();
-			if ($title) $page_list[] = $title;
-			foreach ($wp_pages as $page) {
-				$prefix = '';
-				// show indented child pages?
-				if ($indent) {
-					$has_parent = $page->post_parent;
-					while($has_parent) {
-						$prefix .=  ' - ';
-						$next_page = get_page($has_parent);
-						$has_parent = $next_page->post_parent;
-					}
-				}
-				// add to page list array array
-				$page_list[$page->ID] = $prefix . $page->post_title;
-			}
-			return $page_list;
-		}
-		
-		function debug($value){
-			echo '<pre>';
-			print_r($value);
-			echo '</pre>';
-		}
-
-		function add_admin_section($links ){
-			$plugin_links = array();
-	
-			if ( version_compare( WC()->version, '2.6', '>=' ) ) {
-				$section_slug = strtolower(substr(__CLASS__,0,12));
-			} else {
-				$section_slug = strtolower( __CLASS__ );
-			}
-			$setting_url = admin_url( 'admin.php?page=wc-settings&tab=checkout&section=' . $section_slug );
-			$plugin_links[] = '<a href="' . esc_url( $setting_url ) . '">' . esc_html__( 'MOMO', 'woocommerce-payment-momo' ) . '</a>';
-			
-			return array_merge( $plugin_links, $links );
-		}
+		fwrite($fh, $error);
+		fclose($fh);
 	}
-	
-	
-}
-function woocommerce_add_payment_gateway_momo($methods) {
-	$methods[] = 'WC_Gateway_Momo';
-	return $methods;
+
+
+    function showMessage($content){
+            return '<div class="box '.$this->msg['class'].'-box">'.$this->msg['message'].'</div>'.$content;
+        }
+     // get all pages
+    function get_pages($title = false, $indent = true) {
+        $wp_pages = get_pages('sort_column=menu_order');
+        $page_list = array();
+        if ($title) $page_list[] = $title;
+        foreach ($wp_pages as $page) {
+            $prefix = '';
+            // show indented child pages?
+            if ($indent) {
+                $has_parent = $page->post_parent;
+                while($has_parent) {
+                    $prefix .=  ' - ';
+                    $next_page = get_page($has_parent);
+                    $has_parent = $next_page->post_parent;
+                }
+            }
+            // add to page list array array
+            $page_list[$page->ID] = $prefix . $page->post_title;
+        }
+        return $page_list;
+    }
+
+  public function buildCheckoutUrlExpand($return_url, $receiver, $transaction_info, $order_code, $price, $currency = 'vnd', $quantity = 1, $tax = 0, $discount = 0, $fee_cal = 0, $fee_shipping = 0, $order_description = '', $buyer_info = '', $affiliate_code = '')
+  { 
+    // This is from the class provided by Ngan Luong. Not advisable to mess.
+    //  This one is for advanced checkout, including taxes and discounts
+    if ($affiliate_code == "") $affiliate_code = $this->affiliate_code;
+    $arr_param = array(
+      'merchant_site_code'  =>  strval($this->merchant_site_code),
+      'return_url'          =>  strval(strtolower($return_url)),
+      'receiver'            =>  strval($receiver),
+      'transaction_info'    =>  strval($transaction_info),
+      'order_code'          =>  strval($order_code),
+      'price'               =>  strval($price),
+      'currency'            =>  strval($currency),
+      'quantity'            =>  strval($quantity),
+      'tax'                 =>  strval($tax),
+      'discount'            =>  strval($discount),
+      'fee_cal'             =>  strval($fee_cal),
+      'fee_shipping'        =>  strval($fee_shipping),
+      'order_description'   =>  strval($order_description),
+      'buyer_info'          =>  strval($buyer_info),
+      'affiliate_code'      =>  strval($affiliate_code)
+    );
+    $secure_code ='';
+    $secure_code = implode(' ', $arr_param) . ' ' . $this->secure_pass;
+    $arr_param['secure_code'] = md5($secure_code);
+    /* */
+    $redirect_url = $this->nganluong_url;
+    if (strpos($redirect_url, '?') === false) {
+      $redirect_url .= '?';
+    } else if (substr($redirect_url, strlen($redirect_url)-1, 1) != '?' && strpos($redirect_url, '&') === false) {
+      $redirect_url .= '&';     
+    }
+        
+    /* */
+    $url = '';
+    foreach ($arr_param as $key=>$value) {
+      $value = urlencode($value);
+      if ($url == '') {
+        $url .= $key . '=' . $value;
+      } else {
+        $url .= '&' . $key . '=' . $value;
+      }
+    }
+    
+    return $redirect_url.$url;
+  }
+  
+  /*Hàm thực hiện xác minh tính đúng đắn của các tham số trả về từ nganluong.vn*/
+  
+  public function verifyPaymentUrl($transaction_info, $order_code, $price, $payment_id, $payment_type, $error_text, $secure_code)
+  {
+    // This is from the class provided by Ngan Luong. Not advisable to mess.
+    // Checks the returned URL from Ngan Luong to see if it matches
+    // Tạo mã xác thực từ chủ web
+    $str = '';
+    $str .= ' ' . strval($transaction_info);
+    $str .= ' ' . strval($order_code);
+    $str .= ' ' . strval($price);
+    $str .= ' ' . strval($payment_id);
+    $str .= ' ' . strval($payment_type);
+    $str .= ' ' . strval($error_text);
+    $str .= ' ' . strval($this->merchant_site_code);
+    $str .= ' ' . strval($this->secure_pass);
+
+         // Mã hóa các tham số
+    $verify_secure_code = '';
+    $verify_secure_code = md5($str);
+    
+    // Xác thực mã của chủ web với mã trả về từ nganluong.vn
+    if ($verify_secure_code === $secure_code) return true;
+    
+    return false;
+  }
+
 }
 
-add_filter('woocommerce_payment_gateways', 'woocommerce_add_payment_gateway_momo' );
+  function woocommerce_add_NganLuongVN_gateway($methods) {
+      $methods[] = 'WC_NganLuongVN';
+      return $methods;
+  }
+
+    add_filter('woocommerce_payment_gateways', 'woocommerce_add_NganLuongVN_gateway' );
+}
 
